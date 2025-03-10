@@ -1,10 +1,26 @@
 services:
+  # Backend API service
+  - type: web
+    name: auterion-drone-app
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: AUTERION_API_TOKEN
+        sync: false
+      - key: PORT
+        value: 5000
+      - key: NODE_ENV
+        value: production
+
   # Frontend static site
   - type: static
     name: auterion-drone-frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./build
     envVars:
+      - key: REACT_APP_API_URL
+        value: https://auterion-drone-api.onrender.com
       - key: REACT_APP_AUTERION_API_TOKEN
         sync: false
       - key: REACT_APP_FLIGHTS_ENDPOINT

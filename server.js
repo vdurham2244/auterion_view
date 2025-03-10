@@ -24,6 +24,9 @@ const CACHE_KEYS = {
   VEHICLES: 'all_vehicles'
 };
 
+// Serve static files from the React build
+app.use(express.static(path.join(__dirname, 'build')));
+
 app.use(cors());
 app.use(express.json());
 
@@ -321,10 +324,7 @@ app.get('/api/vehicles/:vehicleId/flights', async (req, res) => {
   }
 });
 
-// Serve static files from the React build (after running "npm run build")
-app.use(express.static(path.join(__dirname, 'build')));
-
-// Catch-all route to support client-side routing
+// Catch-all route to serve React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });

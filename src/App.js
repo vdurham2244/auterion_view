@@ -3,8 +3,8 @@ import axios from 'axios';
 import './App.css';
 
 const API_CONFIG = {
-  FLIGHTS_ENDPOINT: process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/flights` : 'http://localhost:5000/api/flights',
-  VEHICLES_ENDPOINT: process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/vehicles` : 'http://localhost:5000/api/vehicles',
+  FLIGHTS_ENDPOINT: '/api/flights',
+  VEHICLES_ENDPOINT: '/api/vehicles',
   headers: {
     'Accept': 'application/json'
   }
