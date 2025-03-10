@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './App.css';
 
+const API_CONFIG = {
+  FLIGHTS_ENDPOINT: process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/flights` : 'http://localhost:5000/api/flights',
+  VEHICLES_ENDPOINT: process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api/vehicles` : 'http://localhost:5000/api/vehicles',
+  headers: {
+    'Accept': 'application/json'
+  }
+};
+
 function App() {
   const [flights, setFlights] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -163,29 +171,29 @@ function App() {
       }
       setError(null);
       
-      console.log('Fetching ALL flights from API with no limits...');
-      const response = await axios.get(`http://localhost:5000/api/flights`);
+      console.log('Fetching ALL flights from Auterion API...');
+      const response = await axios.get(API_CONFIG.FLIGHTS_ENDPOINT, {
+        headers: API_CONFIG.headers,
+        params: {
+          sort: 'desc',
+          order_by: 'date',
+          include_files: false,
+          page_size: 100000
+        }
+      });
       
-      const flightsData = response.data.items || [];
-      console.log(`Received ALL flight data: ${flightsData.length} flights (with ${response.data.uniqueVehicleIds || 0} unique vehicle IDs)`);
+      const flightsData = Array.isArray(response.data) ? response.data : response.data.items || [];
+      console.log(`Received flight data: ${flightsData.length} flights`);
       
       setFlights(flightsData);
       setAllFlightsLoaded(true);
       setCurrentPage(1);
       
-      // Update cache status
-      setIsCachedData(response.data.cached || false);
-      setLastCacheTime(response.data.cacheTime);
-      
       return flightsData;
     } catch (err) {
-      console.error('Detailed error (flights):', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      });
-      const errorMessage = err.response?.data?.error || 
-        'Failed to fetch flights data. Please make sure the server is running and properly configured.';
+      console.error('Error fetching flights:', err);
+      const errorMessage = err.response?.data?.message || 
+        'Failed to fetch flights data. Please check your API token and try again.';
       setError(errorMessage);
       return null;
     } finally {
@@ -202,22 +210,21 @@ function App() {
         setLoading(true);
       }
       setError(null);
-      console.log('Attempting to fetch vehicles from server...');
-      const response = await axios.get('http://localhost:5000/api/vehicles');
       
-      const vehiclesList = response.data?.items || [];
-      console.log(`Vehicles data received: ${vehiclesList.length} vehicles`);
+      console.log('Fetching vehicles from Auterion API...');
+      const response = await axios.get(API_CONFIG.VEHICLES_ENDPOINT, {
+        headers: API_CONFIG.headers
+      });
+      
+      const vehiclesList = Array.isArray(response.data) ? response.data : response.data.items || [];
+      console.log(`Received vehicles data: ${vehiclesList.length} vehicles`);
       
       setVehicles(vehiclesList);
       return vehiclesList;
     } catch (err) {
-      console.error('Detailed error (vehicles):', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      });
-      const errorMessage = err.response?.data?.error || 
-        'Failed to fetch vehicles data. Please make sure the server is running and properly configured.';
+      console.error('Error fetching vehicles:', err);
+      const errorMessage = err.response?.data?.message || 
+        'Failed to fetch vehicles data. Please check your API token and try again.';
       setError(errorMessage);
       return null;
     } finally {
@@ -269,7 +276,9 @@ function App() {
         setLoadedAllVehicleFlights(prev => ({ ...prev, [vehicleId]: true }));
       } else {
         // Make an API call to get vehicle-specific flights
-        const response = await axios.get(`http://localhost:5000/api/vehicles/${vehicleId}/flights`);
+        const response = await axios.get(`${API_CONFIG.VEHICLES_ENDPOINT}/${vehicleId}/flights`, {
+          headers: API_CONFIG.headers
+        });
         
         console.log(`Received ${response.data.items.length} flights for vehicle ${vehicleId}`);
         
@@ -478,7 +487,7 @@ function App() {
   // Add cache clear function
   const clearCache = async () => {
     try {
-      await axios.post('http://localhost:5000/api/cache/clear');
+      await axios.post(`${API_CONFIG.VEHICLES_ENDPOINT}/cache/clear`);
       // Refresh data after clearing cache
       if (view === 'flightsByVehicle') {
         const allFlightsData = await fetchAllFlights(false);

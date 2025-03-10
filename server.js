@@ -25,6 +25,7 @@ const CACHE_KEYS = {
 };
 
 app.use(cors());
+app.use(express.json());
 
 // API proxy endpoint to fetch flights
 app.get('/api/flights', async (req, res) => {

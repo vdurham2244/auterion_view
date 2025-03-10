@@ -1,0 +1,13 @@
+services:
+  # Frontend static site
+  - type: static
+    name: auterion-drone-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_AUTERION_API_TOKEN
+        sync: false
+      - key: REACT_APP_FLIGHTS_ENDPOINT
+        value: https://api.auterion.com/flights
+      - key: REACT_APP_VEHICLES_ENDPOINT
+        value: https://api.auterion.com/vehicles
