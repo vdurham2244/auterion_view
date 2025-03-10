@@ -21,7 +21,9 @@ const cache = new NodeCache({
 // Cache keys
 const CACHE_KEYS = {
   FLIGHTS: 'all_flights',
-  VEHICLES: 'all_vehicles'
+  VEHICLES: 'all_vehicles',
+  FLIGHTS_TOTAL: 'flights_total',
+  FLIGHTS_BY_VEHICLE: 'flights_by_vehicle'
 };
 
 // Serve static files from the React build
@@ -33,106 +35,98 @@ app.use(express.json());
 // API proxy endpoint to fetch flights
 app.get('/api/flights', async (req, res) => {
   const apiToken = process.env.AUTERION_API_TOKEN;
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = parseInt(req.query.pageSize) || 100;
   
-  console.log('Received request for flights');
-  console.log('API Token present:', !!apiToken);
+  console.log('Received request for flights - page:', page, 'pageSize:', pageSize);
   
   if (!apiToken) {
     return res.status(500).json({ 
-      error: 'API token not configured. Please set AUTERION_API_TOKEN environment variable.' 
+      error: 'API token not configured' 
     });
   }
 
   try {
-    // Check cache first
-    const cachedFlights = cache.get(CACHE_KEYS.FLIGHTS);
-    if (cachedFlights) {
-      console.log('Returning cached flights data');
-      return res.json(cachedFlights);
+    // Check if we have the total count cached
+    let totalFlights = cache.get(CACHE_KEYS.FLIGHTS_TOTAL);
+    let flightsByVehicle = cache.get(CACHE_KEYS.FLIGHTS_BY_VEHICLE) || {};
+    
+    // Check cache for the specific page
+    const cacheKey = `${CACHE_KEYS.FLIGHTS}_${page}_${pageSize}`;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData && totalFlights) {
+      console.log('Returning cached flights data for page:', page);
+      return res.json({
+        ...cachedData,
+        total: totalFlights,
+        totalByVehicle: flightsByVehicle
+      });
     }
 
     console.log('Cache miss - fetching fresh flights data');
-    console.log('Making request to Auterion API endpoint:', FLIGHTS_ENDPOINT);
-    console.log('*** ATTEMPTING TO FETCH ALL FLIGHTS WITH NO PAGINATION PARAMETERS ***');
-    
-    // Make the most basic request possible to the API - no pagination parameters
     const response = await axios.get(FLIGHTS_ENDPOINT, {
       headers: {
         'Accept': 'application/json',
         'x-api-key': apiToken.trim()
       },
-      // Keep only the absolutely necessary parameters
       params: {
         sort: 'desc',
         order_by: 'date',
         include_files: false,
-        page_size: 100000,
+        page,
+        page_size: pageSize
       }
     });
     
-    console.log('Received response from Auterion API (flights)');
+    let flightsData = Array.isArray(response.data) ? response.data : response.data.items || [];
     
-    let allFlights = Array.isArray(response.data)
-      ? response.data
-      : response.data.items || [];
+    // If this is the first page or we don't have a total count, update the totals
+    if (page === 1 || !totalFlights) {
+      totalFlights = response.data.total || flightsData.length;
+      cache.set(CACHE_KEYS.FLIGHTS_TOTAL, totalFlights);
       
-    console.log(`*** TOTAL FLIGHTS FETCHED FROM API: ${allFlights.length} ***`);
+      // Update flights by vehicle count
+      flightsByVehicle = {};
+      flightsData.forEach(flight => {
+        if (flight.vehicle && flight.vehicle.id) {
+          const vehicleId = flight.vehicle.id.toString();
+          flightsByVehicle[vehicleId] = (flightsByVehicle[vehicleId] || 0) + 1;
+        }
+      });
+      cache.set(CACHE_KEYS.FLIGHTS_BY_VEHICLE, flightsByVehicle);
+    }
     
     // Process flights to ensure vehicle data is correctly structured
-    const processedFlights = allFlights.map(flight => {
-      // Make sure vehicle data is properly formatted
-      if (flight.vehicle) {
-        // Ensure vehicle ID is a string to avoid type comparison issues
-        if (flight.vehicle.id) {
-          flight.vehicle.id = flight.vehicle.id.toString();
-        }
-      }
-      return flight;
-    });
+    const processedFlights = flightsData.map(flight => ({
+      id: flight.id,
+      date: flight.date,
+      duration: flight.duration,
+      distance: flight.distance,
+      flight_url: flight.flight_url,
+      vehicle: flight.vehicle ? {
+        id: flight.vehicle.id.toString(),
+        name: flight.vehicle.name
+      } : null
+    }));
     
-    // Get unique vehicle IDs from flights for debugging
-    const vehicleIdsInFlights = new Set();
-    processedFlights.forEach(flight => {
-      if (flight.vehicle && flight.vehicle.id) {
-        vehicleIdsInFlights.add(flight.vehicle.id);
-      }
-    });
-    
-    console.log(`Found ${vehicleIdsInFlights.size} unique vehicle IDs in flights`);
-    console.log(`Some example vehicle IDs: ${Array.from(vehicleIdsInFlights).slice(0, 5).join(', ')}`);
-    
-    // Before sending response, store in cache
-    cache.set(CACHE_KEYS.FLIGHTS, { 
+    const responseData = { 
       items: processedFlights,
-      total: processedFlights.length,
-      uniqueVehicleIds: vehicleIdsInFlights.size,
-      cached: true,
-      cacheTime: new Date().toISOString()
-    });
-
-    // Send ALL flights to the client with vehicle metadata
-    res.json({ 
-      items: processedFlights,
-      total: processedFlights.length,
-      uniqueVehicleIds: vehicleIdsInFlights.size,
+      total: totalFlights,
+      totalByVehicle: flightsByVehicle,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalFlights / pageSize),
       cached: false
-    });
+    };
+
+    // Cache the response
+    cache.set(cacheKey, responseData);
+
+    res.json(responseData);
   } catch (error) {
-    console.error('Error fetching flights:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data
-    });
-    
-    if (error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.message || 'Unknown error occurred';
-      return res.status(status).json({ error: message });
-    } else if (error.request) {
-      return res.status(503).json({ error: 'Unable to reach Auterion API. Please try again later' });
-    } else {
-      return res.status(500).json({ error: 'Internal server error occurred' });
-    }
+    console.error('Error fetching flights:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
