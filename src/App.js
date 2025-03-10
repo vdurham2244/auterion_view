@@ -32,7 +32,6 @@ function App() {
   const [sortVehiclesBy, setSortVehiclesBy] = useState('flightCount');
   const [isCachedData, setIsCachedData] = useState(false);
   const [lastCacheTime, setLastCacheTime] = useState(null);
-  const [totalsByVehicle, setTotalsByVehicle] = useState({});
   
   // Load initial data based on view
   useEffect(() => {
@@ -172,26 +171,23 @@ function App() {
       }
       setError(null);
       
-      console.log('Fetching flights page:', currentPage);
+      console.log('Fetching ALL flights from Auterion API...');
       const response = await axios.get(API_CONFIG.FLIGHTS_ENDPOINT, {
         headers: API_CONFIG.headers,
         params: {
-          page: currentPage,
-          pageSize: itemsPerPage,
           sort: 'desc',
-          order_by: 'date'
+          order_by: 'date',
+          include_files: false,
+          page_size: 100000
         }
       });
       
-      const { items: flightsData, total, totalPages: newTotalPages, totalByVehicle } = response.data;
-      console.log(`Received ${flightsData.length} flights (page ${currentPage} of ${newTotalPages})`);
+      const flightsData = Array.isArray(response.data) ? response.data : response.data.items || [];
+      console.log(`Received flight data: ${flightsData.length} flights`);
       
       setFlights(flightsData);
-      setTotalFlights(total);
-      setTotalPages(newTotalPages);
-      if (totalByVehicle) {
-        setTotalsByVehicle(totalByVehicle);
-      }
+      setAllFlightsLoaded(true);
+      setCurrentPage(1);
       
       return flightsData;
     } catch (err) {
@@ -205,7 +201,7 @@ function App() {
         setLoading(false);
       }
     }
-  }, [currentPage, itemsPerPage]);
+  }, []);
 
   // Fetch vehicles function
   const fetchVehicles = async (setLoadingState = true) => {
@@ -240,33 +236,71 @@ function App() {
 
   // Fetch flights for a specific vehicle
   const fetchFlightsForVehicle = async (vehicleId) => {
+    // Skip if already loaded all flights for this vehicle
     if (loadedAllVehicleFlights[vehicleId]) {
+      console.log(`Already loaded flights for vehicle ${vehicleId}, skipping fetch`);
       return;
     }
     
     try {
+      console.log(`Loading flights for vehicle ${vehicleId}...`);
       setLoadingVehicleFlights(prev => ({ ...prev, [vehicleId]: true }));
       
-      const response = await axios.get(`${API_CONFIG.VEHICLES_ENDPOINT}/${vehicleId}/flights`, {
-        headers: API_CONFIG.headers,
-        params: {
-          sort: 'desc',
-          order_by: 'date'
-        }
-      });
-      
-      const vehicleFlights = response.data.items || [];
-      console.log(`Received ${vehicleFlights.length} flights for vehicle ${vehicleId}`);
-      
-      setVehicleFlightsMap(prev => ({
-        ...prev,
-        [vehicleId]: {
-          vehicleInfo: vehicles.find(v => v.id === vehicleId) || { id: vehicleId },
-          flights: vehicleFlights
-        }
-      }));
-      
-      setLoadedAllVehicleFlights(prev => ({ ...prev, [vehicleId]: true }));
+      // If we already have all flights loaded, use those instead of making a new API call
+      if (allFlightsLoaded && flights.length > 0) {
+        console.log(`Using cached flights for vehicle ${vehicleId}`);
+        
+        // Filter flights for this vehicle from our cached data
+        const vehicleFlights = flights.filter(flight => 
+          flight.vehicle && flight.vehicle.id === vehicleId
+        );
+        
+        console.log(`Found ${vehicleFlights.length} flights for vehicle ${vehicleId} from cached data`);
+        
+        // Update the vehicle flights map
+        setVehicleFlightsMap(prev => {
+          const updatedMap = { ...prev };
+          if (!updatedMap[vehicleId]) {
+            const vehicleInfo = vehicles.find(v => v.id === vehicleId) || { id: vehicleId };
+            updatedMap[vehicleId] = { vehicleInfo, flights: [] };
+          }
+          
+          updatedMap[vehicleId] = {
+            ...updatedMap[vehicleId],
+            flights: vehicleFlights
+          };
+          
+          return updatedMap;
+        });
+        
+        setLoadedAllVehicleFlights(prev => ({ ...prev, [vehicleId]: true }));
+      } else {
+        // Make an API call to get vehicle-specific flights
+        const response = await axios.get(`${API_CONFIG.VEHICLES_ENDPOINT}/${vehicleId}/flights`, {
+          headers: API_CONFIG.headers
+        });
+        
+        console.log(`Received ${response.data.items.length} flights for vehicle ${vehicleId}`);
+        
+        setVehicleFlightsMap(prev => {
+          // Make sure we have the vehicle in our map
+          const updatedMap = { ...prev };
+          if (!updatedMap[vehicleId]) {
+            const vehicleInfo = vehicles.find(v => v.id === vehicleId) || { id: vehicleId };
+            updatedMap[vehicleId] = { vehicleInfo, flights: [] };
+          }
+          
+          // Update with new flights data
+          updatedMap[vehicleId] = {
+            ...updatedMap[vehicleId],
+            flights: response.data.items
+          };
+          
+          return updatedMap;
+        });
+        
+        setLoadedAllVehicleFlights(prev => ({ ...prev, [vehicleId]: true }));
+      }
     } catch (err) {
       console.error(`Error fetching flights for vehicle ${vehicleId}:`, err);
     } finally {
@@ -469,13 +503,6 @@ function App() {
       setError('Failed to clear cache');
     }
   };
-
-  // Update useEffect for pagination
-  useEffect(() => {
-    if (view === 'flights') {
-      fetchAllFlights();
-    }
-  }, [currentPage, itemsPerPage, view]);
 
   if (loading) {
     return (
@@ -779,17 +806,13 @@ function App() {
                         </div>
                         <div className="stat-item">
                           <span className="stat-label">Total Flights</span>
-                          <span className="stat-value">{totalFlights}</span>
+                          <span className="stat-value">{flights.length}</span>
                         </div>
                         <div className="stat-item">
                           <span className="stat-label">Vehicles with Flights</span>
                           <span className="stat-value">
-                            {Object.keys(totalsByVehicle).length}
+                            {Object.values(vehicleFlightsMap).filter(v => v.flights && v.flights.length > 0).length}
                           </span>
-                        </div>
-                        <div className="stat-item">
-                          <span className="stat-label">Current Page</span>
-                          <span className="stat-value">{currentPage} of {totalPages}</span>
                         </div>
                       </div>
                     </div>
