@@ -71,10 +71,10 @@
 
 .actions-container {
   display: flex;
-  justify-content: center;
-  gap: 15px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
 }
 
 .expand-buttons {
@@ -146,18 +146,12 @@
   display: block;
 }
 
-.flights-grid {
+.flights-grid, .vehicles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 25px;
   width: 100%;
-}
-
-.vehicles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-  width: 100%;
+  padding: 20px;
 }
 
 .vehicle-flights-container {
@@ -167,58 +161,161 @@
   width: 100%;
 }
 
-.card {
+.flight-card, .vehicle-card {
   background: white;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
-  color: #333;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.flight-card {
+  border-radius: 15px;
+  padding: 25px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 123, 255, 0.1);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
-.vehicle-card {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+.flight-card::before, .vehicle-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, #007bff, #00d4ff);
+}
+
+.flight-card:hover, .vehicle-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 15px rgba(0, 123, 255, 0.1);
 }
 
 .card h3 {
-  color: #007bff;
-  margin-top: 0;
-  margin-bottom: 15px;
-  border-bottom: 1px solid rgba(0, 123, 255, 0.2);
-  padding-bottom: 10px;
+  color: #2c3e50;
+  margin: 0 0 20px 0;
+  padding: 0 0 15px 0;
+  border-bottom: 2px solid rgba(0, 123, 255, 0.1);
+  font-size: 1.4rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .card-details {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
   text-align: left;
-  flex-grow: 1;
 }
 
 .card-details p {
-  margin: 8px 0;
-  line-height: 1.5;
+  margin: 0;
+  padding: 8px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-.card-details a {
-  color: #007bff;
-  text-decoration: none;
+.card-details p:last-child {
+  border-bottom: none;
+}
+
+.card-details strong {
+  color: #2c3e50;
+  font-weight: 600;
+  margin-right: 10px;
+}
+
+.vehicle-card .status-indicator {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
   font-weight: 500;
 }
 
-.card-details a:hover {
+.vehicle-card .vehicle-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.vehicle-card .stat-item {
+  text-align: center;
+}
+
+.flight-card .flight-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.flight-card .flight-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.flight-card .view-flight-btn {
+  padding: 8px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.flight-card .view-flight-btn:hover {
+  background-color: #0056b3;
+  transform: translateY(-2px);
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-badge.active {
+  background-color: rgba(40, 167, 69, 0.1);
+  color: #28a745;
+}
+
+.status-badge.inactive {
+  background-color: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
+}
+
+.metric-value {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1.1rem;
+  color: #007bff;
+  font-weight: 500;
+}
+
+.card-link {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.card-link:hover {
+  color: #0056b3;
   text-decoration: underline;
 }
 
@@ -283,6 +380,19 @@
   border: 1px solid rgba(0, 123, 255, 0.2);
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.vehicle-flights-card::before {
+  content: attr(data-flight-count);
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #f0f0f0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: #666;
 }
 
 .vehicle-header {
@@ -847,4 +957,48 @@
 .expand-flights-button:hover {
   background-color: #138496;
   transform: translateY(-2px);
+}
+
+.cache-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.cache-status {
+  font-size: 0.9rem;
+  color: #666;
+  background: #f0f0f0;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+
+.clear-cache-button {
+  background-color: #f0f0f0;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-cache-button:hover {
+  background-color: #e0e0e0;
+  border-color: #ccc;
+}
+
+.company-logo {
+  margin: 20px 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  max-width: 300px;
+}
+
+.company-logo img {
+  width: 100%;
+  height: auto;
+  display: block;
 }

@@ -21,6 +21,9 @@ function App() {
   const [compactFlightView, setCompactFlightView] = useState({});
   const [sortField, setSortField] = useState('date');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [sortVehiclesBy, setSortVehiclesBy] = useState('flightCount');
+  const [isCachedData, setIsCachedData] = useState(false);
+  const [lastCacheTime, setLastCacheTime] = useState(null);
   
   // Load initial data based on view
   useEffect(() => {
@@ -170,7 +173,11 @@ function App() {
       setAllFlightsLoaded(true);
       setCurrentPage(1);
       
-      return flightsData; // Return flights data for further processing
+      // Update cache status
+      setIsCachedData(response.data.cached || false);
+      setLastCacheTime(response.data.cacheTime);
+      
+      return flightsData;
     } catch (err) {
       console.error('Detailed error (flights):', {
         message: err.message,
@@ -379,6 +386,20 @@ function App() {
     );
   };
 
+  // Add a function to sort vehicles
+  const getSortedVehicles = () => {
+    const filteredVehicles = getFilteredVehicles();
+    
+    return [...filteredVehicles].sort((a, b) => {
+      if (sortVehiclesBy === 'flightCount') {
+        const aFlights = vehicleFlightsMap[a.id]?.flights?.length || 0;
+        const bFlights = vehicleFlightsMap[b.id]?.flights?.length || 0;
+        return bFlights - aFlights; // Sort by most flights first
+      }
+      return 0;
+    });
+  };
+
   // Component for pagination controls
   const Pagination = () => (
     <div className="pagination">
@@ -454,10 +475,33 @@ function App() {
     setSortField(field);
   };
 
+  // Add cache clear function
+  const clearCache = async () => {
+    try {
+      await axios.post('http://localhost:5000/api/cache/clear');
+      // Refresh data after clearing cache
+      if (view === 'flightsByVehicle') {
+        const allFlightsData = await fetchAllFlights(false);
+        const vehiclesData = await fetchVehicles(false);
+        if (allFlightsData && vehiclesData) {
+          processFlightsForVehicles(allFlightsData, vehiclesData);
+        }
+      } else {
+        view === 'flights' ? fetchAllFlights() : fetchVehicles();
+      }
+    } catch (err) {
+      console.error('Error clearing cache:', err);
+      setError('Failed to clear cache');
+    }
+  };
+
   if (loading) {
     return (
       <div className="App">
         <div className="App-header">
+          <div className="company-logo">
+            <img src="/logo.png" alt="Company Logo" />
+          </div>
           <h1>Loading {view} data...</h1>
           <div className="loading-spinner"></div>
           {view === 'flights' && (
@@ -482,6 +526,9 @@ function App() {
     return (
       <div className="App">
         <div className="App-header">
+          <div className="company-logo">
+            <img src="/logo.png" alt="Company Logo" />
+          </div>
           <h1>Error</h1>
           <p className="error-message">{error}</p>
           <button 
@@ -504,6 +551,10 @@ function App() {
   return (
     <div className="App">
       <div className="App-header">
+        <div className="company-logo">
+          <img src="/logo.png" alt="Company Logo" />
+        </div>
+        
         <div className="view-toggle">
           <button 
             onClick={() => setView('flightsByVehicle')} 
@@ -532,20 +583,28 @@ function App() {
         </h1>
         
         <div className="actions-container">
+          <div className="cache-info">
+            {isCachedData && (
+              <span className="cache-status">
+                Using cached data from {new Date(lastCacheTime).toLocaleTimeString()}
+              </span>
+            )}
+            <button 
+              onClick={clearCache}
+              className="clear-cache-button"
+            >
+              Clear Cache
+            </button>
+          </div>
           <button 
             onClick={async () => {
               if (view === 'flightsByVehicle') {
                 setLoading(true);
-                
                 try {
-                  // Clear cached state
                   setLoadedAllVehicleFlights({});
                   setVehicleFlightsMap({});
-                  
-                  // Reload all data
                   const allFlightsData = await fetchAllFlights(false);
                   const vehiclesData = await fetchVehicles(false);
-                  
                   if (allFlightsData && vehiclesData) {
                     processFlightsForVehicles(allFlightsData, vehiclesData);
                   }
@@ -631,30 +690,34 @@ function App() {
                 <>
                   <Pagination />
                   <div className="flights-grid">
-                    {sortFlights(flights, sortField, sortDirection).map((flight) => (
+                    {sortFlights(getCurrentPageFlights(), sortField, sortDirection).map((flight) => (
                       <div key={flight.id} className="card flight-card">
-                        <h3>Flight {flight.id}</h3>
+                        <h3>
+                          <span>Flight {flight.id}</span>
+                          <span className="status-badge active">Active</span>
+                        </h3>
+                        <div className="flight-meta">
+                          <span>Vehicle ID: {flight.vehicle?.id || 'N/A'}</span>
+                          <span>{new Date(flight.date).toLocaleDateString()}</span>
+                        </div>
                         <div className="card-details">
                           <p>
-                            <strong>Start:</strong> {new Date(flight.date).toLocaleString()}
+                            <strong>Start Time</strong>
+                            <span className="metric-value">{new Date(flight.date).toLocaleTimeString()}</span>
                           </p>
                           <p>
-                            <strong>Duration:</strong> {formatDuration(flight.duration)}
+                            <strong>Duration</strong>
+                            <span className="metric-value">{formatDuration(flight.duration)}</span>
                           </p>
                           <p>
-                            <strong>Distance:</strong> {Math.round(flight.distance)} meters
+                            <strong>Distance</strong>
+                            <span className="metric-value">{Math.round(flight.distance)} meters</span>
                           </p>
-                          {flight.vehicle && (
-                            <p>
-                              <strong>Vehicle ID:</strong> {flight.vehicle.id}
-                            </p>
-                          )}
-                          <p>
-                            <strong>Flight URL:</strong>{' '}
-                            <a href={flight.flight_url} target="_blank" rel="noopener noreferrer">
-                              View Flight
+                          <div className="flight-actions">
+                            <a href={flight.flight_url} target="_blank" rel="noopener noreferrer" className="view-flight-btn">
+                              View Flight Details
                             </a>
-                          </p>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -670,36 +733,47 @@ function App() {
               <div className="vehicles-grid">
                 {getFilteredVehicles().map((vehicle) => (
                   <div key={vehicle.id} className="card vehicle-card">
-                    <h3>Vehicle {vehicle.id}</h3>
+                    <h3>
+                      <span>Vehicle {vehicle.id}</span>
+                      <span className={`status-badge ${vehicle.state?.toLowerCase() || 'unknown'}`}>
+                        {vehicle.state || 'Unknown'}
+                      </span>
+                    </h3>
                     <div className="card-details">
                       <p>
-                        <strong>Name:</strong> {vehicle.name || 'N/A'}
+                        <strong>Name</strong>
+                        <span>{vehicle.name || 'N/A'}</span>
                       </p>
                       <p>
-                        <strong>Model:</strong> {vehicle.model || 'N/A'}
+                        <strong>Model</strong>
+                        <span>{vehicle.model || 'N/A'}</span>
                       </p>
                       <p>
-                        <strong>Serial Number:</strong> {vehicle.serial_number || 'N/A'}
+                        <strong>Serial Number</strong>
+                        <span className="metric-value">{vehicle.serial_number || 'N/A'}</span>
                       </p>
                       <p>
-                        <strong>State:</strong> <span className={`status-${vehicle.state?.toLowerCase() || 'unknown'}`}>{vehicle.state || 'N/A'}</span>
-                      </p>
-                      <p>
-                        <strong>Cloud Services:</strong> {vehicle.enable_cloud_services ? 'Enabled' : 'Disabled'}
+                        <strong>Cloud Services</strong>
+                        <span className={`status-badge ${vehicle.enable_cloud_services ? 'active' : 'inactive'}`}>
+                          {vehicle.enable_cloud_services ? 'Enabled' : 'Disabled'}
+                        </span>
                       </p>
                       {vehicleFlightsMap[vehicle.id] && loadedAllVehicleFlights[vehicle.id] && (
-                        <p>
-                          <strong>Total Flights:</strong> {vehicleFlightsMap[vehicle.id].flights.length}
-                        </p>
+                        <div className="vehicle-stats">
+                          <div className="stat-item">
+                            <strong>Total Flights</strong>
+                            <div className="metric-value">{vehicleFlightsMap[vehicle.id].flights.length}</div>
+                          </div>
+                        </div>
                       )}
                       <button 
-                        className="view-flights-button"
+                        className="view-flight-btn"
                         onClick={() => {
                           setView('flightsByVehicle');
                           toggleVehicleExpansion(vehicle.id);
                         }}
                       >
-                        View Flights
+                        View Flight History
                       </button>
                     </div>
                   </div>
@@ -736,7 +810,7 @@ function App() {
                   </div>
 
                   <div className="vehicle-flights-container">
-                    {getFilteredVehicles().map((vehicle) => {
+                    {getSortedVehicles().map((vehicle) => {
                       const vehicleId = vehicle.id.toString();
                       const vehicleFlights = vehicleFlightsMap[vehicleId]?.flights || [];
                       const hasFlights = vehicleFlights.length > 0;

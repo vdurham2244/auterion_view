@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
+const NodeCache = require('node-cache');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -10,6 +11,18 @@ const PORT = process.env.PORT || 5000;
 // Endpoints from environment or defaults
 const FLIGHTS_ENDPOINT = process.env.FLIGHTS_ENDPOINT || 'https://api.auterion.com/flights';
 const VEHICLES_ENDPOINT = process.env.VEHICLES_ENDPOINT || 'https://api.auterion.com/vehicles';
+
+// Initialize cache with 5 minute TTL (time to live)
+const cache = new NodeCache({ 
+  stdTTL: 300, // 5 minutes in seconds
+  checkperiod: 60 // Check for expired entries every minute
+});
+
+// Cache keys
+const CACHE_KEYS = {
+  FLIGHTS: 'all_flights',
+  VEHICLES: 'all_vehicles'
+};
 
 app.use(cors());
 
@@ -27,6 +40,14 @@ app.get('/api/flights', async (req, res) => {
   }
 
   try {
+    // Check cache first
+    const cachedFlights = cache.get(CACHE_KEYS.FLIGHTS);
+    if (cachedFlights) {
+      console.log('Returning cached flights data');
+      return res.json(cachedFlights);
+    }
+
+    console.log('Cache miss - fetching fresh flights data');
     console.log('Making request to Auterion API endpoint:', FLIGHTS_ENDPOINT);
     console.log('*** ATTEMPTING TO FETCH ALL FLIGHTS WITH NO PAGINATION PARAMETERS ***');
     
@@ -76,11 +97,21 @@ app.get('/api/flights', async (req, res) => {
     console.log(`Found ${vehicleIdsInFlights.size} unique vehicle IDs in flights`);
     console.log(`Some example vehicle IDs: ${Array.from(vehicleIdsInFlights).slice(0, 5).join(', ')}`);
     
+    // Before sending response, store in cache
+    cache.set(CACHE_KEYS.FLIGHTS, { 
+      items: processedFlights,
+      total: processedFlights.length,
+      uniqueVehicleIds: vehicleIdsInFlights.size,
+      cached: true,
+      cacheTime: new Date().toISOString()
+    });
+
     // Send ALL flights to the client with vehicle metadata
     res.json({ 
       items: processedFlights,
       total: processedFlights.length,
-      uniqueVehicleIds: vehicleIdsInFlights.size
+      uniqueVehicleIds: vehicleIdsInFlights.size,
+      cached: false
     });
   } catch (error) {
     console.error('Error fetching flights:', {
@@ -115,6 +146,14 @@ app.get('/api/vehicles', async (req, res) => {
   }
 
   try {
+    // Check cache first
+    const cachedVehicles = cache.get(CACHE_KEYS.VEHICLES);
+    if (cachedVehicles) {
+      console.log('Returning cached vehicles data');
+      return res.json(cachedVehicles);
+    }
+
+    console.log('Cache miss - fetching fresh vehicles data');
     console.log('Making request to Auterion API endpoint:', VEHICLES_ENDPOINT);
     const response = await axios.get(VEHICLES_ENDPOINT, {
       headers: {
@@ -145,9 +184,18 @@ app.get('/api/vehicles', async (req, res) => {
       console.log(`First 5 vehicle IDs: ${processedVehicles.slice(0, 5).map(v => v.id).join(', ')}`);
     }
     
+    // Before sending response, store in cache
+    cache.set(CACHE_KEYS.VEHICLES, { 
+      items: processedVehicles,
+      total: processedVehicles.length,
+      cached: true,
+      cacheTime: new Date().toISOString()
+    });
+
     res.json({ 
       items: processedVehicles,
-      total: processedVehicles.length
+      total: processedVehicles.length,
+      cached: false
     });
   } catch (error) {
     console.error('Error fetching vehicles:', {
@@ -278,6 +326,13 @@ app.use(express.static(path.join(__dirname, 'build')));
 // Catch-all route to support client-side routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
+// Add cache clear endpoint
+app.post('/api/cache/clear', (req, res) => {
+  cache.flushAll();
+  console.log('Cache cleared');
+  res.json({ message: 'Cache cleared successfully' });
 });
 
 app.listen(PORT, () => {
