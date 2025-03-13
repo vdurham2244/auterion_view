@@ -324,6 +324,95 @@ app.get('/api/vehicles/:vehicleId/flights', async (req, res) => {
   }
 });
 
+// API endpoint to get yearly statistics
+app.get('/api/yearly-stats', async (req, res) => {
+  const apiToken = process.env.AUTERION_API_TOKEN;
+  
+  if (!apiToken) {
+    return res.status(500).json({ 
+      error: 'API token not configured. Please set AUTERION_API_TOKEN environment variable.' 
+    });
+  }
+
+  try {
+    // Try to get flights from cache first
+    let flights = cache.get(CACHE_KEYS.FLIGHTS)?.items;
+
+    // If not in cache, fetch from API
+    if (!flights) {
+      const response = await axios.get(FLIGHTS_ENDPOINT, {
+        headers: {
+          'Accept': 'application/json',
+          'x-api-key': apiToken.trim()
+        },
+        params: {
+          sort: 'desc',
+          order_by: 'date',
+          include_files: false,
+          page_size: 100000,
+        }
+      });
+      
+      flights = Array.isArray(response.data) ? response.data : response.data.items || [];
+    }
+
+    // Process flights to get yearly statistics
+    const yearlyStats = flights.reduce((acc, flight) => {
+      const year = new Date(flight.date).getFullYear();
+      
+      if (!acc[year]) {
+        acc[year] = {
+          year,
+          totalFlights: 0,
+          totalMinutes: 0,
+          totalDistance: 0,
+          vehicles: new Set(),
+          totalDuration: 0
+        };
+      }
+      
+      acc[year].totalFlights++;
+      
+      // Add duration (convert from seconds to minutes)
+      if (flight.duration) {
+        acc[year].totalMinutes += flight.duration / 60;
+      }
+
+      // Add distance
+      if (flight.distance) {
+        acc[year].totalDistance += flight.distance;
+      }
+      
+      // Track unique vehicles
+      if (flight.vehicle && flight.vehicle.id) {
+        acc[year].vehicles.add(flight.vehicle.id);
+      }
+      
+      return acc;
+    }, {});
+
+    // Convert to array and format the response
+    const formattedStats = Object.values(yearlyStats)
+      .map(stat => ({
+        year: stat.year,
+        totalFlights: stat.totalFlights,
+        totalMinutes: Math.round(stat.totalMinutes),
+        totalDistance: Math.round(stat.totalDistance),
+        uniqueVehicles: stat.vehicles.size,
+        flightsPerVehicle: (stat.totalFlights / stat.vehicles.size).toFixed(1),
+        hoursPerVehicle: (stat.totalMinutes / 60 / stat.vehicles.size).toFixed(1),
+        averageFlightDuration: (stat.totalMinutes / stat.totalFlights).toFixed(1),
+        averageDistance: (stat.totalDistance / stat.totalFlights).toFixed(1)
+      }))
+      .sort((a, b) => b.year - a.year); // Sort by year descending
+
+    res.json(formattedStats);
+  } catch (error) {
+    console.error('Error getting yearly statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch yearly statistics' });
+  }
+});
+
 // Catch-all route to serve React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));

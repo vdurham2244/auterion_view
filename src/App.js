@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import './App.css';
 
 const API_CONFIG = {
@@ -8,6 +10,653 @@ const API_CONFIG = {
   headers: {
     'Accept': 'application/json'
   }
+};
+
+// Add this before the App component
+const styles = `
+.yearly-stats-container {
+  padding: 20px;
+  margin: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.stat-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+}
+
+.stat-card h3 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 1.5rem;
+}
+
+.stat-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  color: #6c757d;
+}
+
+.stat-value {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: #6c757d;
+}
+
+.error {
+  text-align: center;
+  padding: 20px;
+  color: #dc3545;
+}
+
+.stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.stats-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.metric-select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.toggle-stats-btn {
+  padding: 8px 16px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toggle-stats-btn:hover {
+  background: #5a6268;
+}
+
+.total-stats-summary {
+  margin-bottom: 20px;
+}
+
+.total-stat-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.total-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-top: 10px;
+}
+
+.total-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.total-stat-item span {
+  color: #6c757d;
+  margin-bottom: 5px;
+}
+
+.total-stat-item strong {
+  font-size: 1.5rem;
+  color: #2c3e50;
+}
+
+.chart-container {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.analytics-container {
+  padding: 20px;
+}
+
+.analytics-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.monthly-stats-container {
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.year-select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  margin-right: 10px;
+}
+
+.toggle-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  background: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-button.active {
+  background: #007bff;
+  color: white;
+}
+
+.toggle-button:hover {
+  background: ${props => props.active ? '#0056b3' : '#e9ecef'};
+}
+`;
+
+// Add these utility functions
+const formatHours = (minutes) => {
+  const hours = minutes / 60;
+  return hours.toFixed(1);
+};
+
+const formatDurationDisplay = (minutes) => {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = Math.round(minutes % 60);
+  return `${hours}h ${remainingMinutes}m`;
+};
+
+const YearlyStats = () => {
+  const [yearlyStats, setYearlyStats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [sortBy, setSortBy] = useState('year');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedMetric, setSelectedMetric] = useState('totalFlights');
+  const [showAllStats, setShowAllStats] = useState(false);
+
+  useEffect(() => {
+    const fetchYearlyStats = async () => {
+      try {
+        // In development, use the proxy defined in package.json
+        const baseUrl = process.env.NODE_ENV === 'development' ? '' : '';
+        const response = await fetch(`${baseUrl}/api/yearly-stats`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch yearly statistics');
+        }
+        const data = await response.json();
+        
+        // Calculate additional metrics
+        const enhancedData = data.map(stat => ({
+          ...stat,
+          flightsPerVehicle: (stat.totalFlights / stat.uniqueVehicles).toFixed(1),
+          hoursPerVehicle: (stat.totalMinutes / 60 / stat.uniqueVehicles).toFixed(1),
+          averageFlightDuration: (stat.totalMinutes / stat.totalFlights).toFixed(1)
+        }));
+        
+        setYearlyStats(enhancedData);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchYearlyStats();
+  }, []);
+
+  const sortData = (data, field, order) => {
+    return [...data].sort((a, b) => {
+      if (order === 'asc') {
+        return a[field] - b[field];
+      }
+      return b[field] - a[field];
+    });
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const getTotalStats = () => {
+    return yearlyStats.reduce((acc, stat) => ({
+      totalFlights: acc.totalFlights + stat.totalFlights,
+      totalMinutes: acc.totalMinutes + stat.totalMinutes,
+      uniqueVehicles: Math.max(acc.uniqueVehicles, stat.uniqueVehicles)
+    }), { totalFlights: 0, totalMinutes: 0, uniqueVehicles: 0 });
+  };
+
+  if (loading) return <div className="loading">Loading yearly statistics...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
+
+  const sortedStats = sortData(yearlyStats, sortBy, sortOrder);
+  const totals = getTotalStats();
+
+  return (
+    <div className="yearly-stats-container">
+      <div className="stats-header">
+        <h2>Yearly Statistics</h2>
+        <div className="stats-controls">
+          <select 
+            value={selectedMetric}
+            onChange={(e) => setSelectedMetric(e.target.value)}
+            className="metric-select"
+          >
+            <option value="totalFlights">Total Flights</option>
+            <option value="totalMinutes">Flight Hours</option>
+            <option value="uniqueVehicles">Unique Vehicles</option>
+            <option value="flightsPerVehicle">Flights per Vehicle</option>
+          </select>
+          <button 
+            onClick={() => setShowAllStats(!showAllStats)}
+            className="toggle-stats-btn"
+          >
+            {showAllStats ? 'Show Less' : 'Show All Stats'}
+          </button>
+        </div>
+      </div>
+
+      <div className="total-stats-summary">
+        <div className="total-stat-card">
+          <h3>All-Time Statistics</h3>
+          <div className="total-stats-grid">
+            <div className="total-stat-item">
+              <span>Total Flights</span>
+              <strong>{totals.totalFlights}</strong>
+            </div>
+            <div className="total-stat-item">
+              <span>Flight Hours</span>
+              <strong>{formatHours(totals.totalMinutes)}h</strong>
+            </div>
+            <div className="total-stat-item">
+              <span>Max Active Vehicles</span>
+              <strong>{totals.uniqueVehicles}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="chart-container">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={sortedStats}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="year" />
+            <YAxis />
+            <Tooltip 
+              formatter={(value, name) => {
+                if (name === 'Flight Hours') return `${formatHours(value)}h`;
+                return value;
+              }}
+            />
+            <Legend />
+            <Bar 
+              dataKey={selectedMetric === 'totalMinutes' ? 'totalMinutes' : selectedMetric}
+              name={selectedMetric === 'totalMinutes' ? 'Flight Hours' : selectedMetric === 'totalFlights' ? 'Total Flights' : 'Unique Vehicles'}
+              fill="#8884d8" 
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="stats-grid">
+        {sortedStats.map(stat => (
+          <div key={stat.year} className="stat-card">
+            <h3>{stat.year}</h3>
+            <div className="stat-details">
+              <div className="stat-item">
+                <span className="stat-label">Total Flights:</span>
+                <span className="stat-value">{stat.totalFlights}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Flight Hours:</span>
+                <span className="stat-value">{formatHours(stat.totalMinutes)}h</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Unique Vehicles:</span>
+                <span className="stat-value">{stat.uniqueVehicles}</span>
+              </div>
+              {showAllStats && (
+                <>
+                  <div className="stat-item">
+                    <span className="stat-label">Flights per Vehicle:</span>
+                    <span className="stat-value">{stat.flightsPerVehicle}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Hours per Vehicle:</span>
+                    <span className="stat-value">{stat.hoursPerVehicle}h</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Avg Flight Duration:</span>
+                    <span className="stat-value">{formatDurationDisplay(stat.averageFlightDuration)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MonthlyStats = () => {
+  const [monthlyStats, setMonthlyStats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMetric, setSelectedMetric] = useState('totalFlights');
+  const [availableYears, setAvailableYears] = useState([]);
+
+  useEffect(() => {
+    const fetchMonthlyStats = async () => {
+      try {
+        const response = await fetch('/api/flights');
+        if (!response.ok) {
+          throw new Error('Failed to fetch flight data');
+        }
+        const data = await response.json();
+        const flights = data.items || [];
+
+        // Get all available years first
+        const years = new Set(flights.map(flight => new Date(flight.date).getFullYear()));
+        const sortedYears = Array.from(years).sort((a, b) => b - a); // Sort descending
+        setAvailableYears(sortedYears);
+
+        // If no year is selected, use the most recent year
+        if (!selectedYear || !sortedYears.includes(selectedYear)) {
+          setSelectedYear(sortedYears[0]);
+        }
+
+        // Process flights into monthly statistics
+        const monthlyData = flights.reduce((acc, flight) => {
+          const date = new Date(flight.date);
+          const year = date.getFullYear();
+          if (year !== selectedYear) return acc;
+
+          const month = date.getMonth();
+          const key = `${year}-${month}`;
+
+          if (!acc[key]) {
+            acc[key] = {
+              year,
+              month,
+              monthName: format(date, 'MMMM'),
+              totalFlights: 0,
+              totalMinutes: 0,
+              totalDistance: 0,
+              vehicles: new Set(),
+            };
+          }
+
+          acc[key].totalFlights++;
+          
+          // Add duration in minutes
+          if (flight.duration) {
+            acc[key].totalMinutes += flight.duration / 60; // Convert seconds to minutes
+          }
+
+          // Add distance
+          if (flight.distance) {
+            acc[key].totalDistance += flight.distance;
+          }
+
+          // Track unique vehicles
+          if (flight.vehicle?.id) {
+            acc[key].vehicles.add(flight.vehicle.id);
+          }
+
+          return acc;
+        }, {});
+
+        // Ensure all months are represented
+        for (let month = 0; month < 12; month++) {
+          const key = `${selectedYear}-${month}`;
+          if (!monthlyData[key]) {
+            monthlyData[key] = {
+              year: selectedYear,
+              month,
+              monthName: format(new Date(selectedYear, month), 'MMMM'),
+              totalFlights: 0,
+              totalMinutes: 0,
+              totalDistance: 0,
+              vehicles: new Set(),
+            };
+          }
+        }
+
+        // Convert to array and calculate additional metrics
+        const processedData = Object.values(monthlyData)
+          .map(stat => ({
+            ...stat,
+            uniqueVehicles: stat.vehicles.size,
+            flightsPerVehicle: stat.vehicles.size ? (stat.totalFlights / stat.vehicles.size).toFixed(1) : '0',
+            hoursPerVehicle: stat.vehicles.size ? (stat.totalMinutes / 60 / stat.vehicles.size).toFixed(1) : '0',
+            averageFlightDuration: stat.totalFlights ? (stat.totalMinutes / stat.totalFlights).toFixed(1) : '0',
+            averageDistance: stat.totalFlights ? (stat.totalDistance / stat.totalFlights).toFixed(1) : '0'
+          }))
+          .sort((a, b) => a.month - b.month);
+
+        setMonthlyStats(processedData);
+      } catch (err) {
+        console.error('Error processing flight data:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMonthlyStats();
+  }, [selectedYear]);
+
+  if (loading) return <div className="loading">Loading monthly statistics...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
+
+  const getTotalStats = () => {
+    return monthlyStats.reduce((acc, stat) => ({
+      totalFlights: acc.totalFlights + stat.totalFlights,
+      totalMinutes: acc.totalMinutes + stat.totalMinutes,
+      totalDistance: acc.totalDistance + stat.totalDistance,
+      uniqueVehicles: Math.max(acc.uniqueVehicles, stat.uniqueVehicles)
+    }), { totalFlights: 0, totalMinutes: 0, totalDistance: 0, uniqueVehicles: 0 });
+  };
+
+  const totals = getTotalStats();
+
+  return (
+    <div className="monthly-stats-container">
+      <div className="stats-header">
+        <h2>Monthly Statistics {selectedYear}</h2>
+        <div className="stats-controls">
+          <select 
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="year-select"
+          >
+            {availableYears.map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          <select 
+            value={selectedMetric}
+            onChange={(e) => setSelectedMetric(e.target.value)}
+            className="metric-select"
+          >
+            <option value="totalFlights">Total Flights</option>
+            <option value="totalMinutes">Flight Hours</option>
+            <option value="uniqueVehicles">Active Vehicles</option>
+            <option value="totalDistance">Total Distance (m)</option>
+            <option value="flightsPerVehicle">Flights per Vehicle</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="total-stats-summary">
+        <div className="total-stat-card">
+          <h3>{selectedYear} Summary</h3>
+          <div className="total-stats-grid">
+            <div className="total-stat-item">
+              <span>Total Flights</span>
+              <strong>{totals.totalFlights}</strong>
+            </div>
+            <div className="total-stat-item">
+              <span>Flight Hours</span>
+              <strong>{formatHours(totals.totalMinutes)}h</strong>
+            </div>
+            <div className="total-stat-item">
+              <span>Total Distance</span>
+              <strong>{(totals.totalDistance / 1000).toFixed(1)}km</strong>
+            </div>
+            <div className="total-stat-item">
+              <span>Max Active Vehicles</span>
+              <strong>{totals.uniqueVehicles}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="chart-container">
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={monthlyStats}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="monthName" />
+            <YAxis />
+            <Tooltip 
+              formatter={(value, name) => {
+                if (name === 'Flight Hours') return `${formatHours(value)}h`;
+                if (name === 'Total Distance') return `${(value / 1000).toFixed(1)}km`;
+                return value;
+              }}
+            />
+            <Legend />
+            <Line 
+              type="monotone"
+              dataKey={selectedMetric === 'totalMinutes' ? 'totalMinutes' : selectedMetric}
+              name={selectedMetric === 'totalMinutes' ? 'Flight Hours' : 
+                    selectedMetric === 'totalDistance' ? 'Total Distance' :
+                    selectedMetric}
+              stroke="#8884d8"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="stats-grid">
+        {monthlyStats.map(stat => (
+          <div key={`${stat.year}-${stat.month}`} className="stat-card">
+            <h3>{stat.monthName}</h3>
+            <div className="stat-details">
+              <div className="stat-item">
+                <span className="stat-label">Total Flights:</span>
+                <span className="stat-value">{stat.totalFlights}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Flight Hours:</span>
+                <span className="stat-value">{formatHours(stat.totalMinutes)}h</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Total Distance:</span>
+                <span className="stat-value">{(stat.totalDistance / 1000).toFixed(1)}km</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Active Vehicles:</span>
+                <span className="stat-value">{stat.uniqueVehicles}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Flights per Vehicle:</span>
+                <span className="stat-value">{stat.flightsPerVehicle}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Hours per Vehicle:</span>
+                <span className="stat-value">{stat.hoursPerVehicle}h</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Avg Flight Duration:</span>
+                <span className="stat-value">{formatDurationDisplay(stat.averageFlightDuration)}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Avg Distance/Flight:</span>
+                <span className="stat-value">{(parseFloat(stat.averageDistance) / 1000).toFixed(1)}km</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const Analytics = () => {
+  const [view, setView] = useState('yearly');
+
+  return (
+    <div className="analytics-container">
+      <div className="analytics-toggle">
+        <button 
+          onClick={() => setView('yearly')} 
+          className={`toggle-button ${view === 'yearly' ? 'active' : ''}`}
+        >
+          Yearly View
+        </button>
+        <button 
+          onClick={() => setView('monthly')} 
+          className={`toggle-button ${view === 'monthly' ? 'active' : ''}`}
+        >
+          Monthly View
+        </button>
+      </div>
+      {view === 'yearly' ? <YearlyStats /> : <MonthlyStats />}
+    </div>
+  );
 };
 
 function App() {
@@ -559,12 +1208,19 @@ function App() {
 
   return (
     <div className="App">
+      <style>{styles}</style>
       <div className="App-header">
         <div className="company-logo">
           <img src="/logo.png" alt="Company Logo" />
         </div>
         
         <div className="view-toggle">
+          <button 
+            onClick={() => setView('analytics')} 
+            className={`toggle-button ${view === 'analytics' ? 'active' : ''}`}
+          >
+            Analytics
+          </button>
           <button 
             onClick={() => setView('flightsByVehicle')} 
             className={`toggle-button ${view === 'flightsByVehicle' ? 'active' : ''}`}
@@ -586,7 +1242,8 @@ function App() {
         </div>
 
         <h1>
-          {view === 'flights' ? 'Flight Data' : 
+          {view === 'analytics' ? 'Flight Analytics' :
+           view === 'flights' ? 'Flight Data' : 
            view === 'vehicles' ? 'Vehicle Data' : 
            'Flights by Vehicle'}
         </h1>
@@ -691,7 +1348,9 @@ function App() {
         )}
 
         <div className={`data-container ${view === 'flightsByVehicle' ? 'full-width' : ''}`}>
-          {view === 'flights' ? (
+          {view === 'analytics' ? (
+            <Analytics />
+          ) : view === 'flights' ? (
             <>
               {flights.length === 0 ? (
                 <p className="no-data">No flights found</p>
