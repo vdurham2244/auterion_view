@@ -76,6 +76,12 @@ app.get('/api/flights', async (req, res) => {
       ? response.data
       : response.data.items || [];
       
+    // Debug: Print structure of first flight
+    if (allFlights.length > 0) {
+      console.log('Example Flight Data Structure:');
+      console.log(JSON.stringify(allFlights[0], null, 2));
+    }
+    
     console.log(`*** TOTAL FLIGHTS FETCHED FROM API: ${allFlights.length} ***`);
     
     // Process flights to ensure vehicle data is correctly structured
