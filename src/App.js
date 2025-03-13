@@ -3,12 +3,18 @@ import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import './App.css';
+import HeatMapView from './components/HeatMapView';
+import './components/HeatMapView.css';
+import ROMComparisonView from './components/ROMComparisonView';
 
+// API Configuration
+const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000';
 const API_CONFIG = {
-  FLIGHTS_ENDPOINT: '/api/flights',
-  VEHICLES_ENDPOINT: '/api/vehicles',
+  FLIGHTS_ENDPOINT: `${API_BASE_URL}/api/flights`,
+  VEHICLES_ENDPOINT: `${API_BASE_URL}/api/vehicles`,
   headers: {
-    'Accept': 'application/json'
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
   }
 };
 
@@ -665,7 +671,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [loadingVehicleFlights, setLoadingVehicleFlights] = useState({});
   const [error, setError] = useState(null);
-  const [view, setView] = useState('flightsByVehicle'); // Set flightsByVehicle as the default view
+  const [view, setView] = useState('flightsByVehicle');
   const [expandedVehicles, setExpandedVehicles] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(100);
@@ -681,6 +687,7 @@ function App() {
   const [sortVehiclesBy, setSortVehiclesBy] = useState('flightCount');
   const [isCachedData, setIsCachedData] = useState(false);
   const [lastCacheTime, setLastCacheTime] = useState(null);
+  const [flightDataView, setFlightDataView] = useState('flightsByVehicle');
   
   // Load initial data based on view
   useEffect(() => {
@@ -1216,36 +1223,64 @@ function App() {
         
         <div className="view-toggle">
           <button 
+            onClick={() => setView('rom')} 
+            className={`toggle-button ${view === 'rom' ? 'active' : ''}`}
+          >
+            ROM Analysis
+          </button>
+          <button 
             onClick={() => setView('analytics')} 
             className={`toggle-button ${view === 'analytics' ? 'active' : ''}`}
           >
             Analytics
           </button>
           <button 
-            onClick={() => setView('flightsByVehicle')} 
-            className={`toggle-button ${view === 'flightsByVehicle' ? 'active' : ''}`}
+            onClick={() => setView('heatmap')} 
+            className={`toggle-button ${view === 'heatmap' ? 'active' : ''}`}
           >
-            Flights by Vehicle
+            Heat Map
           </button>
           <button 
-            onClick={() => setView('vehicles')} 
-            className={`toggle-button ${view === 'vehicles' ? 'active' : ''}`}
+            onClick={() => setView('flightData')} 
+            className={`toggle-button ${view === 'flightData' ? 'active' : ''}`}
           >
-            All Vehicles
-          </button>
-          <button 
-            onClick={() => setView('flights')} 
-            className={`toggle-button ${view === 'flights' ? 'active' : ''}`}
-          >
-            All Flights
+            Flights/Vehicles Data
           </button>
         </div>
 
+        {/* Add sub-navigation for Flights/Vehicles Data */}
+        {view === 'flightData' && (
+          <div className="view-toggle sub-navigation">
+            <button 
+              onClick={() => setFlightDataView('flightsByVehicle')} 
+              className={`toggle-button ${flightDataView === 'flightsByVehicle' ? 'active' : ''}`}
+            >
+              Flights by Vehicle
+            </button>
+            <button 
+              onClick={() => setFlightDataView('vehicles')} 
+              className={`toggle-button ${flightDataView === 'vehicles' ? 'active' : ''}`}
+            >
+              All Vehicles
+            </button>
+            <button 
+              onClick={() => setFlightDataView('flights')} 
+              className={`toggle-button ${flightDataView === 'flights' ? 'active' : ''}`}
+            >
+              All Flights
+            </button>
+          </div>
+        )}
+
         <h1>
-          {view === 'analytics' ? 'Flight Analytics' :
-           view === 'flights' ? 'Flight Data' : 
-           view === 'vehicles' ? 'Vehicle Data' : 
-           'Flights by Vehicle'}
+          {view === 'rom' ? 'ROM Analysis' :
+           view === 'analytics' ? 'Flight Analytics' :
+           view === 'heatmap' ? 'Heat Map' :
+           view === 'flightData' ? (
+             flightDataView === 'flightsByVehicle' ? 'Flights by Vehicle' :
+             flightDataView === 'vehicles' ? 'Vehicle Data' :
+             'Flight Data'
+           ) : ''}
         </h1>
         
         <div className="actions-container">
@@ -1288,104 +1323,114 @@ function App() {
           >
             Refresh Data
           </button>
-
-          {view === 'flightsByVehicle' && (
-            <div className="expand-buttons">
-              <button onClick={expandAllVehicles} className="expand-all-button">
-                Expand All
-              </button>
-              <button onClick={expandVehiclesWithFlights} className="expand-flights-button">
-                Expand With Flights
-              </button>
-              <button onClick={collapseAllVehicles} className="collapse-all-button">
-                Collapse All
-              </button>
-            </div>
-          )}
         </div>
 
-        {view === 'flights' && flights.length > 0 && (
-          <div className="flight-stats">
-            <p>Total Flights: <strong>{flights.length}</strong></p>
-            <div className="page-size-selector">
-              <label htmlFor="pageSize">Flights per page:</label>
-              <select 
-                id="pageSize" 
-                value={itemsPerPage}
-                onChange={(e) => {
-                  const newItemsPerPage = parseInt(e.target.value);
-                  setItemsPerPage(newItemsPerPage);
-                  setCurrentPage(1); // Reset to first page when changing page size
-                }}
-              >
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {(view === 'vehicles' || view === 'flightsByVehicle') && (
-          <div className="vehicle-filter">
-            <input
-              type="text"
-              placeholder="Search vehicles by name, ID, model..."
-              value={vehicleFilter}
-              onChange={(e) => setVehicleFilter(e.target.value)}
-              className="vehicle-search-input"
-            />
-            {vehicleFilter && (
-              <button 
-                onClick={() => setVehicleFilter('')}
-                className="clear-filter-button"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className={`data-container ${view === 'flightsByVehicle' ? 'full-width' : ''}`}>
-          {view === 'analytics' ? (
+        <div className="data-container">
+          {view === 'rom' ? (
+            <ROMComparisonView />
+          ) : view === 'analytics' ? (
             <Analytics />
-          ) : view === 'flights' ? (
-            <>
-              {flights.length === 0 ? (
-                <p className="no-data">No flights found</p>
-              ) : (
-                <>
-                  <Pagination />
-                  <div className="flights-grid">
-                    {sortFlights(getCurrentPageFlights(), sortField, sortDirection).map((flight) => (
-                      <div key={flight.id} className="card flight-card">
-                        <h3>
-                          <span>Flight {flight.id}</span>
-                          <span className="status-badge active">Active</span>
-                        </h3>
-                        <div className="flight-meta">
-                          <span>Vehicle ID: {flight.vehicle?.id || 'N/A'}</span>
-                          <span>{new Date(flight.date).toLocaleDateString()}</span>
+          ) : view === 'heatmap' ? (
+            <HeatMapView />
+          ) : view === 'flightData' ? (
+            <div className="flight-data-container">
+              {flightDataView === 'flightsByVehicle' && (
+                <div className="vehicles-list">
+                  <div className="vehicles-controls">
+                    <input
+                      type="text"
+                      placeholder="Filter vehicles..."
+                      value={vehicleFilter}
+                      onChange={(e) => setVehicleFilter(e.target.value)}
+                      className="vehicle-filter"
+                    />
+                    <div className="expand-controls">
+                      <button onClick={expandAllVehicles}>Expand All</button>
+                      <button onClick={collapseAllVehicles}>Collapse All</button>
+                      <button onClick={expandVehiclesWithFlights}>Show Active</button>
+                    </div>
+                  </div>
+                  {getSortedVehicles().map(vehicle => (
+                    <div key={vehicle.id} className="vehicle-item">
+                      <div 
+                        className="vehicle-header"
+                        onClick={() => toggleVehicleExpansion(vehicle.id)}
+                      >
+                        <h3>{vehicle.name || vehicle.id}</h3>
+                        <span>{vehicleFlightsMap[vehicle.id]?.flights?.length || 0} flights</span>
+                      </div>
+                      {expandedVehicles[vehicle.id] && (
+                        <div className="vehicle-flights">
+                          {loadingVehicleFlights[vehicle.id] ? (
+                            <div className="loading">Loading flights...</div>
+                          ) : (
+                            <>
+                              <div className="flight-view-controls">
+                                <button onClick={() => toggleFlightView(vehicle.id)}>
+                                  {compactFlightView[vehicle.id] ? 'Detailed View' : 'Compact View'}
+                                </button>
+                              </div>
+                              {vehicleFlightsMap[vehicle.id]?.flights?.map(flight => (
+                                <div key={flight.id} className="flight-item">
+                                  <div className="flight-date">
+                                    {new Date(flight.date).toLocaleDateString()}
+                                  </div>
+                                  {!compactFlightView[vehicle.id] && (
+                                    <div className="flight-details">
+                                      <p>Duration: {formatDuration(flight.duration)}</p>
+                                      <p>Distance: {Math.round(flight.distance || 0)}m</p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </>
+                          )}
                         </div>
-                        <div className="card-details">
-                          <p>
-                            <strong>Start Time</strong>
-                            <span className="metric-value">{new Date(flight.date).toLocaleTimeString()}</span>
-                          </p>
-                          <p>
-                            <strong>Duration</strong>
-                            <span className="metric-value">{formatDuration(flight.duration)}</span>
-                          </p>
-                          <p>
-                            <strong>Distance</strong>
-                            <span className="metric-value">{Math.round(flight.distance)} meters</span>
-                          </p>
-                          <div className="flight-actions">
-                            <a href={flight.flight_url} target="_blank" rel="noopener noreferrer" className="view-flight-btn">
-                              View Flight Details
-                            </a>
-                          </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {flightDataView === 'vehicles' && (
+                <div className="vehicles-grid">
+                  {vehicles.map(vehicle => (
+                    <div key={vehicle.id} className="vehicle-card">
+                      <h3>{vehicle.name || vehicle.id}</h3>
+                      <div className="vehicle-info">
+                        <p>Model: {vehicle.model || 'N/A'}</p>
+                        <p>Serial: {vehicle.serial_number || 'N/A'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {flightDataView === 'flights' && (
+                <>
+                  <div className="flights-controls">
+                    <div className="sort-controls">
+                      <select 
+                        value={sortField}
+                        onChange={(e) => handleSort(e.target.value)}
+                      >
+                        <option value="date">Date</option>
+                        <option value="duration">Duration</option>
+                        <option value="distance">Distance</option>
+                      </select>
+                      <button onClick={() => handleSort(sortField)}>
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flights-list">
+                    {getCurrentPageFlights().map(flight => (
+                      <div key={flight.id} className="flight-card">
+                        <div className="flight-header">
+                          <h3>{new Date(flight.date).toLocaleDateString()}</h3>
+                          <span>{flight.vehicle?.name || flight.vehicle?.id || 'Unknown Vehicle'}</span>
+                        </div>
+                        <div className="flight-details">
+                          <p>Duration: {formatDuration(flight.duration)}</p>
+                          <p>Distance: {Math.round(flight.distance || 0)}m</p>
                         </div>
                       </div>
                     ))}
@@ -1393,224 +1438,8 @@ function App() {
                   <Pagination />
                 </>
               )}
-            </>
-          ) : view === 'vehicles' ? (
-            vehicles.length === 0 ? (
-              <p className="no-data">No vehicles found</p>
-            ) : (
-              <div className="vehicles-grid">
-                {getFilteredVehicles().map((vehicle) => (
-                  <div key={vehicle.id} className="card vehicle-card">
-                    <h3>
-                      <span>Vehicle {vehicle.id}</span>
-                      <span className={`status-badge ${vehicle.state?.toLowerCase() || 'unknown'}`}>
-                        {vehicle.state || 'Unknown'}
-                      </span>
-                    </h3>
-                    <div className="card-details">
-                      <p>
-                        <strong>Name</strong>
-                        <span>{vehicle.name || 'N/A'}</span>
-                      </p>
-                      <p>
-                        <strong>Model</strong>
-                        <span>{vehicle.model || 'N/A'}</span>
-                      </p>
-                      <p>
-                        <strong>Serial Number</strong>
-                        <span className="metric-value">{vehicle.serial_number || 'N/A'}</span>
-                      </p>
-                      <p>
-                        <strong>Cloud Services</strong>
-                        <span className={`status-badge ${vehicle.enable_cloud_services ? 'active' : 'inactive'}`}>
-                          {vehicle.enable_cloud_services ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </p>
-                      {vehicleFlightsMap[vehicle.id] && loadedAllVehicleFlights[vehicle.id] && (
-                        <div className="vehicle-stats">
-                          <div className="stat-item">
-                            <strong>Total Flights</strong>
-                            <div className="metric-value">{vehicleFlightsMap[vehicle.id].flights.length}</div>
-                          </div>
-                        </div>
-                      )}
-                      <button 
-                        className="view-flight-btn"
-                        onClick={() => {
-                          setView('flightsByVehicle');
-                          toggleVehicleExpansion(vehicle.id);
-                        }}
-                      >
-                        View Flight History
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          ) : (
-            // Flights by Vehicle view
-            <>
-              {vehicles.length === 0 ? (
-                <p className="no-data">No vehicles found</p>
-              ) : (
-                <>
-                  <div className="vehicle-flights-summary">
-                    <div className="summary-card">
-                      <h3>Flight Summary</h3>
-                      <div className="summary-stats">
-                        <div className="stat-item">
-                          <span className="stat-label">Total Vehicles</span>
-                          <span className="stat-value">{vehicles.length}</span>
-                        </div>
-                        <div className="stat-item">
-                          <span className="stat-label">Total Flights</span>
-                          <span className="stat-value">{flights.length}</span>
-                        </div>
-                        <div className="stat-item">
-                          <span className="stat-label">Vehicles with Flights</span>
-                          <span className="stat-value">
-                            {Object.values(vehicleFlightsMap).filter(v => v.flights && v.flights.length > 0).length}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="vehicle-flights-container">
-                    {getSortedVehicles().map((vehicle) => {
-                      const vehicleId = vehicle.id.toString();
-                      const vehicleFlights = vehicleFlightsMap[vehicleId]?.flights || [];
-                      const hasFlights = vehicleFlights.length > 0;
-                      
-                      const sortedFlights = sortFlights(vehicleFlights, sortField, sortDirection);
-                      
-                      return (
-                        <div key={vehicleId} className={`card vehicle-flights-card ${hasFlights ? 'has-flights' : 'no-flights'}`}>
-                          <div 
-                            className="vehicle-header"
-                            onClick={() => toggleVehicleExpansion(vehicleId)}
-                          >
-                            <div className="vehicle-title">
-                              <h3>
-                                <span className="vehicle-id">Vehicle {vehicleId}</span>
-                                {vehicle.name && <span className="vehicle-name">{vehicle.name}</span>}
-                              </h3>
-                              {loadingVehicleFlights[vehicleId] ? (
-                                <span className="flight-count loading">Loading...</span>
-                              ) : loadedAllVehicleFlights[vehicleId] ? (
-                                <span className="flight-count">
-                                  {vehicleFlights.length > 0 ? 
-                                    `${vehicleFlights.length} flights` : 
-                                    'No flights'}
-                                </span>
-                              ) : (
-                                <span className="flight-count">Click to load flights</span>
-                              )}
-                            </div>
-                            <div className="vehicle-summary">
-                              {vehicle.model && <span className="vehicle-model">{vehicle.model}</span>}
-                              <span className={`vehicle-state status-${vehicle.state?.toLowerCase() || 'unknown'}`}>
-                                {vehicle.state || 'Unknown Status'}
-                              </span>
-                              <span className={`expand-icon ${expandedVehicles[vehicleId] ? 'expanded' : ''}`}>
-                                ▼
-                              </span>
-                            </div>
-                          </div>
-                          
-                          {expandedVehicles[vehicleId] && (
-                            <>
-                              <div className="vehicle-details">
-                                <div className="detail-row">
-                                  <div className="detail-column">
-                                    <p><strong>Serial Number:</strong> {vehicle.serial_number || 'N/A'}</p>
-                                    <p><strong>State:</strong> <span className={`status-${vehicle.state?.toLowerCase() || 'unknown'}`}>{vehicle.state || 'N/A'}</span></p>
-                                  </div>
-                                  <div className="detail-column">
-                                    <p><strong>Cloud Services:</strong> {vehicle.enable_cloud_services ? 'Enabled' : 'Disabled'}</p>
-                                    <p><strong>Total Flights:</strong> {vehicleFlights.length}</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flights-list">
-                                {loadingVehicleFlights[vehicleId] ? (
-                                  <div className="loading-vehicle-flights">
-                                    <div className="loading-spinner"></div>
-                                    <p>Loading flights for this vehicle...</p>
-                                  </div>
-                                ) : !vehicleFlights.length ? (
-                                  <p className="no-flights">No flights recorded for this vehicle</p>
-                                ) : (
-                                  <>
-                                    <div className="flights-header">
-                                      <h4>{vehicleFlights.length} flights found for this vehicle</h4>
-                                      {vehicleFlights.length > 10 && (
-                                        <button className="compact-view-toggle" onClick={() => toggleFlightView(vehicleId)}>
-                                          {compactFlightView[vehicleId] ? 'Show Details' : 'Compact View'}
-                                        </button>
-                                      )}
-                                    </div>
-                                    <table className="flights-table">
-                                      <thead>
-                                        <tr>
-                                          <th>Flight ID</th>
-                                          <th className="sortable-header" onClick={() => handleSort('date')}>
-                                            Date {sortField === 'date' && <span className={`sort-arrow sort-${sortDirection}`}>▼</span>}
-                                          </th>
-                                          <th className="sortable-header" onClick={() => handleSort('duration')}>
-                                            Duration {sortField === 'duration' && <span className={`sort-arrow sort-${sortDirection}`}>▼</span>}
-                                          </th>
-                                          <th className="sortable-header" onClick={() => handleSort('distance')}>
-                                            Distance {sortField === 'distance' && <span className={`sort-arrow sort-${sortDirection}`}>▼</span>}
-                                          </th>
-                                          <th>Actions</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {(compactFlightView[vehicleId] 
-                                          ? sortedFlights.slice(0, 10) 
-                                          : sortedFlights
-                                        ).map(flight => (
-                                          <tr key={flight.id} className="flight-row">
-                                            <td>Flight {flight.id}</td>
-                                            <td>{new Date(flight.date).toLocaleString()}</td>
-                                            <td>{formatDuration(flight.duration)}</td>
-                                            <td>{Math.round(flight.distance)} meters</td>
-                                            <td>
-                                              <a href={flight.flight_url} target="_blank" rel="noopener noreferrer">
-                                                View Flight
-                                              </a>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                        {compactFlightView[vehicleId] && sortedFlights.length > 10 && (
-                                          <tr className="more-flights-row">
-                                            <td colSpan="5" className="more-flights-cell">
-                                              <button 
-                                                onClick={() => setCompactFlightView(prev => ({ ...prev, [vehicleId]: false }))}
-                                                className="view-more-button"
-                                              >
-                                                Show {sortedFlights.length - 10} more flights...
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        )}
-                                      </tbody>
-                                    </table>
-                                  </>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </>
-          )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
